@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mars Surface Explorer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    /* ── Reset & Custom Properties ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #03030d;
+      --bg-card:      #07071a;
+      --border:       #14143a;
+      --border-hover: #22224a;
+      --text:         #dde0f0;
+      --text-dim:     #6870a0;
+      --accent:       #e84c2b;
+      --accent-glow:  rgba(232, 76, 43, 0.35);
+
+      /* Terrain palette */
+      --sand:    #c8903a;
+      --bedrock: #3d85b5;
+      --gravel:  #7a7a90;
+      --rock:    #b84a38;
+      --soil:    #7a5e3a;
+      --unknown: #4a4a70;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Star Canvas ────────────────────────────────────────────────────────── */
+    #stars-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────────────── */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 0 28px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    header {
+      padding: 52px 0 36px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+
+    /* CSS-only Mars planet */
+    .mars-sphere {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #f4844a 0%, #d04020 45%, #8a1800 100%);
+      box-shadow:
+        0 0 0 2px rgba(232,76,43,0.3),
+        0 0 24px rgba(232,76,43,0.4),
+        inset -6px -6px 14px rgba(0,0,0,0.5);
+      flex-shrink: 0;
+      animation: marsRotateGlow 6s ease-in-out infinite;
+    }
+
+    @keyframes marsRotateGlow {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(232,76,43,0.3), 0 0 24px rgba(232,76,43,0.4), inset -6px -6px 14px rgba(0,0,0,0.5); }
+      50%       { box-shadow: 0 0 0 3px rgba(232,76,43,0.5), 0 0 40px rgba(232,76,43,0.6), inset -6px -6px 14px rgba(0,0,0,0.5); }
+    }
+
+    h1 {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(1.7rem, 4vw, 2.9rem);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      background: linear-gradient(135deg, #ff6b47 0%, #ffaa80 50%, #ffe0d0 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      font-weight: 300;
+      color: var(--text-dim);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-top: 6px;
+    }
+
+    .sol-badge {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 5px 16px;
+      border: 1px solid rgba(232,76,43,0.4);
+      border-radius: 999px;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.72rem;
+      color: #ff8a6a;
+      background: rgba(232,76,43,0.08);
+      letter-spacing: 0.1em;
+      transition: opacity 0.3s;
+    }
+
+    /* ── Stats Bar ──────────────────────────────────────────────────────────── */
+    .stats-section {
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stats-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .stats-label {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-right: 4px;
+    }
+
+    .stat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 13px;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: var(--bg-card);
+      font-size: 0.76rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: border-color 0.2s;
+    }
+
+    .stat-chip:hover { border-color: rgba(255,255,255,0.14); }
+
+    .stat-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-sand    { background: var(--sand); }
+    .dot-bedrock { background: var(--bedrock); }
+    .dot-gravel  { background: var(--gravel); }
+    .dot-rock    { background: var(--rock); }
+    .dot-soil    { background: var(--soil); }
+    .dot-unknown { background: var(--unknown); }
+
+    /* ── Filter Bar ─────────────────────────────────────────────────────────── */
+    .filter-section {
+      padding: 22px 0 18px;
+    }
+
+    .filter-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    .filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter-pill {
+      padding: 7px 20px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-dim);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      -webkit-appearance: none;
+    }
+
+    .filter-pill:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+    }
+
+    .filter-pill.active               { background: var(--accent);  border-color: var(--accent);  color: #fff; box-shadow: 0 0 14px var(--accent-glow); }
+    .filter-pill[data-t="sand"].active    { background: var(--sand);    border-color: var(--sand);    color: #fff; box-shadow: 0 0 14px rgba(200,144,58,0.4); }
+    .filter-pill[data-t="bedrock"].active { background: var(--bedrock); border-color: var(--bedrock); color: #fff; box-shadow: 0 0 14px rgba(61,133,181,0.4); }
+    .filter-pill[data-t="gravel"].active  { background: var(--gravel);  border-color: var(--gravel);  color: #fff; box-shadow: 0 0 14px rgba(122,122,144,0.4); }
+    .filter-pill[data-t="rock"].active    { background: var(--rock);    border-color: var(--rock);    color: #fff; box-shadow: 0 0 14px rgba(184,74,56,0.4); }
+    .filter-pill[data-t="soil"].active    { background: var(--soil);    border-color: var(--soil);    color: #fff; box-shadow: 0 0 14px rgba(122,94,58,0.4); }
+    .filter-pill[data-t="unknown"].active { background: var(--unknown); border-color: var(--unknown); color: #fff; box-shadow: 0 0 14px rgba(74,74,112,0.4); }
+
+    /* ── Image Grid ─────────────────────────────────────────────────────────── */
+    .grid-section { padding-bottom: 16px; }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    @media (max-width: 960px)  { .image-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px)  { .image-grid { grid-template-columns: 1fr; } }
+
+    /* ── Image Card ─────────────────────────────────────────────────────────── */
+    .image-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+      opacity: 0;
+      animation: fadeUp 0.38s ease forwards;
+    }
+
+    .image-card:hover {
+      transform: translateY(-5px);
+      border-color: var(--border-hover);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .card-img-wrap {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      background: #050514;
+    }
+
+    .card-img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.32s ease;
+    }
+
+    .image-card:hover .card-img-wrap img {
+      transform: scale(1.05);
+    }
+
+    /* Terrain badge — floating overlay on image */
+    .terrain-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 11px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+
+    .badge-sand    { background: rgba(200,144,58,0.88);  color: #fff9ee; }
+    .badge-bedrock { background: rgba(61,133,181,0.88);  color: #eef6ff; }
+    .badge-gravel  { background: rgba(122,122,144,0.88); color: #f0f0f8; }
+    .badge-rock    { background: rgba(184,74,56,0.88);   color: #fff0ee; }
+    .badge-soil    { background: rgba(122,94,58,0.88);   color: #fff8f0; }
+    .badge-unknown { background: rgba(74,74,112,0.88);   color: #f0f0f8; }
+
+    /* Card info section */
+    .card-info {
+      padding: 14px 16px 16px;
+    }
+
+    .card-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 9px;
+    }
+
+    .sol-number {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.65rem;
+      color: #e06040;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    .conf-wrap {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .conf-bar {
+      width: 52px;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .conf-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.5s ease;
+    }
+
+    .fill-sand    { background: var(--sand); }
+    .fill-bedrock { background: var(--bedrock); }
+    .fill-gravel  { background: var(--gravel); }
+    .fill-rock    { background: var(--rock); }
+    .fill-soil    { background: var(--soil); }
+    .fill-unknown { background: var(--unknown); }
+
+    .conf-pct {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 34px;
+      text-align: right;
+    }
+
+    .card-camera {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .card-date {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    /* ── Controls ───────────────────────────────────────────────────────────── */
+    .controls {
+      text-align: center;
+      padding: 36px 0 48px;
+    }
+
+    .btn-load-more {
+      padding: 13px 40px;
+      background: transparent;
+      border: 1px solid rgba(232, 76, 43, 0.55);
+      color: #ff8060;
+      border-radius: 8px;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-load-more:hover:not(:disabled) {
+      background: rgba(232, 76, 43, 0.1);
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .btn-load-more:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .pending-notice {
+      margin-top: 12px;
+      font-size: 0.73rem;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Loading Spinner ────────────────────────────────────────────────────── */
+    .spinner-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 3, 13, 0.82);
+      backdrop-filter: blur(5px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      transition: opacity 0.28s ease;
+    }
+
+    .spinner-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .spinner-ring {
+      width: 54px;
+      height: 54px;
+      border: 3px solid rgba(255,255,255,0.08);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin-bottom: 18px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spinner-text {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.74rem;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      text-align: center;
+      max-width: 260px;
+      line-height: 1.6;
+    }
+
+    .spinner-sub {
+      margin-top: 8px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.68rem;
+      color: #404060;
+      letter-spacing: 0.02em;
+      text-transform: none;
+    }
+
+    /* ── Empty & Error States ───────────────────────────────────────────────── */
+    .empty-state {
+      grid-column: 1 / -1;
+      padding: 80px 24px;
+      text-align: center;
+      color: var(--text-dim);
+    }
+
+    .empty-state h3 {
+      font-family: 'Orbitron', monospace;
+      font-size: 1rem;
+      color: var(--text);
+      margin-bottom: 8px;
+      letter-spacing: 0.06em;
+    }
+
+    .error-banner {
+      padding: 12px 20px;
+      background: rgba(184,74,56,0.12);
+      border: 1px solid rgba(184,74,56,0.35);
+      border-radius: 8px;
+      font-size: 0.82rem;
+      color: #f09080;
+      margin-bottom: 20px;
+      display: none;
+      line-height: 1.5;
+    }
+
+    .model-banner {
+      padding: 11px 20px;
+      background: rgba(61,133,181,0.1);
+      border: 1px solid rgba(61,133,181,0.3);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      color: #80c0e0;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 22px 0;
+      text-align: center;
+      font-size: 0.7rem;
+      color: #404060;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Tabs ─────────────────────────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      gap: 6px;
+      padding: 18px 0 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .tab-btn {
+      padding: 10px 26px 11px;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      background: var(--bg-card);
+      color: var(--text-dim);
+      font-family: 'Orbitron', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      position: relative;
+      bottom: -1px;
+    }
+
+    .tab-btn:hover { color: var(--text); border-color: var(--border-hover); }
+
+    .tab-btn.active {
+      background: var(--bg);
+      color: var(--text);
+      border-color: var(--border);
+      border-bottom-color: var(--bg);
+    }
+
+    /* ── Map view ─────────────────────────────────────────────────────────────── */
+    #view-map {
+      position: relative;
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 48px rgba(0,0,0,0.6);
+    }
+
+    #map {
+      width: 100%;
+      height: calc(100vh - 200px);
+      min-height: 520px;
+      background: #060410;
+    }
+
+    /* Leaflet dark overrides */
+    .leaflet-container { background: #060410; font-family: 'Inter', sans-serif; }
+    .leaflet-control-zoom {
+      border: 1px solid rgba(255,255,255,0.08) !important;
+      border-radius: 8px !important;
+      overflow: hidden;
+    }
+    .leaflet-control-zoom a {
+      background: rgba(7,7,26,0.88) !important;
+      color: var(--text) !important;
+      border-color: rgba(255,255,255,0.06) !important;
+      width: 30px !important;
+      height: 30px !important;
+      line-height: 30px !important;
+      font-size: 16px !important;
+      backdrop-filter: blur(8px);
+      transition: background 0.2s !important;
+    }
+    .leaflet-control-zoom a:hover { background: rgba(30,30,70,0.95) !important; color: #fff !important; }
+    .leaflet-control-attribution {
+      background: rgba(3,3,13,0.6) !important;
+      color: rgba(110,110,160,0.7) !important;
+      font-size: 0.58rem !important;
+      backdrop-filter: blur(4px);
+    }
+    .leaflet-control-attribution a { color: rgba(110,110,160,0.7) !important; }
+
+    /* Map popup */
+    .leaflet-popup-content-wrapper {
+      background: rgba(8,8,28,0.96) !important;
+      border: 1px solid rgba(60,60,120,0.5) !important;
+      border-radius: 12px !important;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.8), 0 0 0 1px rgba(200,144,58,0.08) !important;
+      color: var(--text) !important;
+      padding: 0 !important;
+      backdrop-filter: blur(12px);
+    }
+    .leaflet-popup-tip { background: rgba(60,60,120,0.5) !important; }
+    .leaflet-popup-content { margin: 0 !important; width: auto !important; min-width: 220px; }
+    .leaflet-popup-close-button { color: var(--text-dim) !important; top: 8px !important; right: 10px !important; font-size: 18px !important; }
+
+    .mp { padding: 14px; }
+    .mp-img {
+      width: 100%;
+      aspect-ratio: 4/3;
+      object-fit: cover;
+      border-radius: 8px;
+      display: block;
+      margin-bottom: 10px;
+      background: #050514;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .mp-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 5px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .mp-row { font-size: 0.74rem; color: var(--text-dim); margin-top: 4px; }
+    .mp-row strong { color: var(--text); }
+
+    /* Map overlay panels — glassmorphism */
+    .map-panel {
+      position: absolute;
+      z-index: 1000;
+      background: rgba(5,5,20,0.82);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px;
+      padding: 14px 16px;
+      backdrop-filter: blur(18px) saturate(1.4);
+      -webkit-backdrop-filter: blur(18px) saturate(1.4);
+      min-width: 148px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .map-panel-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.58rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: rgba(150,155,200,0.65);
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* Legend goes bottom-LEFT so it never overlaps the right-side filter panel */
+    #map-legend { bottom: 28px; left: 12px; }
+    #map-filter-panel { top: 12px; right: 12px; }
+
+    .legend-item, .filter-toggle {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 0.75rem;
+      color: rgba(210,215,240,0.85);
+      margin-bottom: 7px;
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.15s;
+    }
+    .filter-toggle:hover { color: #fff; }
+
+    .legend-item:last-child, .filter-toggle:last-child { margin-bottom: 0; }
+
+    .ldot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 1.5px solid rgba(255,255,255,0.18);
+      box-shadow: 0 0 5px currentColor;
+    }
+
+    .legend-line {
+      width: 22px;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(255,140,60,0.9), rgba(255,100,30,0.4));
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+
+    .filter-toggle input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .filter-toggle.dimmed { opacity: 0.38; }
+
+    /* Map loading overlay */
+    .map-loading {
+      position: absolute;
+      inset: 0;
+      background: rgba(3,3,13,0.72);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 900;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.74rem;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      backdrop-filter: blur(4px);
+    }
+
+    .map-loading.hidden { display: none; }
+
+    .map-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+      pointer-events: none;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      text-align: center;
+      gap: 8px;
+    }
+
+    .map-empty h3 {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.9rem;
+      color: var(--text);
+      letter-spacing: 0.06em;
+    }
+
+    /* Satellite terrain analysis buttons */
+    .btn-analyse {
+      width: 100%;
+      padding: 8px 10px;
+      background: linear-gradient(135deg, #c85240 0%, #7a1a18 100%);
+      color: #fff;
+      border: 1px solid rgba(255,100,80,0.2);
+      border-radius: 7px;
+      font-size: 0.68rem;
+      font-family: 'Orbitron', monospace;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+      box-shadow: 0 2px 12px rgba(200,82,64,0.25);
+    }
+    .btn-analyse:disabled { opacity: 0.45; cursor: wait; transform: none !important; box-shadow: none !important; }
+    .btn-analyse:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 18px rgba(200,82,64,0.45);
+    }
+    #analyse-status { font-size: 0.67rem; color: rgba(140,145,185,0.8); margin-top: 6px; line-height: 1.55; }
+    .leaflet-tooltip.terrain-tip {
+      background: rgba(3,3,20,0.92);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #e8e8ff;
+      font-size: 0.8rem;
+      border-radius: 5px;
+      padding: 4px 8px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Animated star field -->
+<canvas id="stars-canvas"></canvas>
+
+<!-- Loading overlay -->
+<div class="spinner-overlay" id="spinner">
+  <div class="spinner-ring"></div>
+  <div class="spinner-text" id="spinner-text">Classifying Mars terrain…</div>
+  <div class="spinner-sub" id="spinner-sub">First run downloads AI model (~600 MB) and classifies images — this may take a minute.</div>
+</div>
+
+<div class="container">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="header-logo">
+      <div class="mars-sphere"></div>
+      <h1>Mars Surface Explorer</h1>
+    </div>
+    <p class="subtitle">Live imagery · NASA Perseverance Rover · AI terrain classification</p>
+    <div class="sol-badge" id="sol-display">Fetching latest sol…</div>
+  </header>
+
+  <!-- ── Stats Bar ──────────────────────────────────────────────────────────── -->
+  <section class="stats-section">
+    <div class="stats-row" id="stats-row">
+      <span class="stats-label">Loading stats…</span>
+    </div>
+  </section>
+
+  <!-- ── Tab Bar ───────────────────────────────────────────────────────────── -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-view="grid">&#9783; Grid View</button>
+    <button class="tab-btn" data-view="map">&#9685; Traverse Map</button>
+  </div>
+
+  <!-- ── Grid View ─────────────────────────────────────────────────────────── -->
+  <div id="view-grid">
+
+    <!-- ── Filter Bar ─────────────────────────────────────────────────────── -->
+    <section class="filter-section">
+      <div class="filter-label">Filter by terrain type</div>
+      <div class="filter-pills" id="filter-pills">
+        <button class="filter-pill active" data-t="all">All</button>
+        <button class="filter-pill" data-t="sand">Sand</button>
+        <button class="filter-pill" data-t="bedrock">Bedrock</button>
+        <button class="filter-pill" data-t="gravel">Gravel</button>
+        <button class="filter-pill" data-t="rock">Rock</button>
+        <button class="filter-pill" data-t="soil">Soil</button>
+        <button class="filter-pill" data-t="unknown">Unknown</button>
+      </div>
+    </section>
+
+    <!-- ── Image Grid ─────────────────────────────────────────────────────── -->
+    <section class="grid-section">
+      <div class="error-banner" id="error-banner"></div>
+      <div class="model-banner" id="model-banner" style="display:none">
+        ⏳ AI model still loading in background — images will show as <strong>Unknown</strong> until ready, then auto-refresh.
+      </div>
+      <div class="image-grid" id="image-grid"></div>
+    </section>
+
+    <!-- ── Load More ──────────────────────────────────────────────────────── -->
+    <div class="controls" id="controls" style="display:none">
+      <button class="btn-load-more" id="load-more-btn">Load More Images</button>
+      <p class="pending-notice" id="pending-notice"></p>
+    </div>
+
+  </div><!-- /view-grid -->
+
+  <!-- ── Map View ──────────────────────────────────────────────────────────── -->
+  <div id="view-map" style="display:none">
+    <div id="map"></div>
+
+    <!-- terrain filter panel (top-right) -->
+    <div class="map-panel" id="map-filter-panel">
+      <div class="map-panel-title">Show Terrain</div>
+      <label class="filter-toggle" data-terrain="Sand"><input type="checkbox" checked><span class="ldot" style="background:var(--sand)"></span>Sand</label>
+      <label class="filter-toggle" data-terrain="Bedrock"><input type="checkbox" checked><span class="ldot" style="background:var(--bedrock)"></span>Bedrock</label>
+      <label class="filter-toggle" data-terrain="Gravel"><input type="checkbox" checked><span class="ldot" style="background:var(--gravel)"></span>Gravel</label>
+      <label class="filter-toggle" data-terrain="Rock"><input type="checkbox" checked><span class="ldot" style="background:var(--rock)"></span>Rock</label>
+      <label class="filter-toggle" data-terrain="Soil"><input type="checkbox" checked><span class="ldot" style="background:var(--soil)"></span>Soil</label>
+      <label class="filter-toggle" data-terrain="Unknown"><input type="checkbox" checked><span class="ldot" style="background:var(--unknown)"></span>Unknown</label>
+      <div style="border-top:1px solid rgba(255,255,255,0.05);margin-top:11px;padding-top:11px;display:flex;flex-direction:column;gap:7px">
+        <button id="btn-analyse" class="btn-analyse">Analyse 5 km Ahead</button>
+        <button id="btn-analyse-full" class="btn-analyse" style="background:linear-gradient(135deg,#2e7fb8 0%,#12446e 100%);border-color:rgba(60,160,230,0.2);box-shadow:0 2px 12px rgba(46,127,184,0.25)">Classify Full Region</button>
+        <div id="analyse-status" style="font-size:0.68rem;color:var(--text-dim);line-height:1.5">AI terrain classification via NASA orbital imagery.</div>
+      </div>
+    </div>
+
+    <!-- legend (bottom-right) -->
+    <div class="map-panel" id="map-legend">
+      <div class="map-panel-title">Legend</div>
+      <div class="legend-item"><span class="ldot" style="background:var(--sand)"></span>Sand</div>
+      <div class="legend-item"><span class="ldot" style="background:var(--bedrock)"></span>Bedrock</div>
+      <div class="legend-item"><span class="ldot" style="background:var(--gravel)"></span>Gravel</div>
+      <div class="legend-item"><span class="ldot" style="background:var(--rock)"></span>Rock</div>
+      <div class="legend-item"><span class="ldot" style="background:var(--soil)"></span>Soil</div>
+      <div class="legend-item"><span class="ldot" style="background:var(--unknown)"></span>Unknown</div>
+      <div class="legend-item" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.05)">
+        <span class="legend-line"></span>Traverse path
+      </div>
+      <div id="map-coverage" style="margin-top:6px;font-size:0.72rem;color:var(--text-dim);line-height:1.4">
+        Loading waypoints…
+      </div>
+    </div>
+
+    <!-- loading overlay -->
+    <div class="map-loading hidden" id="map-loading">
+      <div class="spinner-ring" style="width:32px;height:32px;margin:0"></div>
+      Loading traverse &amp; terrain data…
+    </div>
+  </div><!-- /view-map -->
+
+  <footer>
+    Imagery courtesy of NASA / JPL-Caltech &nbsp;·&nbsp;
+    Terrain classification via OpenAI CLIP (zero-shot) &nbsp;·&nbsp;
+    Built with Flask &amp; Vanilla JS
+  </footer>
+
+</div><!-- /container -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+
+// ── Star Field Canvas ─────────────────────────────────────────────────────────
+(function () {
+  const canvas = document.getElementById('stars-canvas');
+  const ctx    = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize, { passive: true });
+
+  const STAR_COUNT = 280;
+  const stars = Array.from({ length: STAR_COUNT }, () => ({
+    x:     Math.random(),          // stored as 0-1 fraction; scaled on draw
+    y:     Math.random(),
+    r:     Math.random() * 1.3 + 0.2,
+    a:     Math.random(),          // current alpha
+    speed: (Math.random() * 0.004 + 0.001) * (Math.random() < 0.5 ? 1 : -1),
+  }));
+
+  function drawStars() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const W = canvas.width, H = canvas.height;
+    for (const s of stars) {
+      s.a += s.speed;
+      if (s.a > 1 || s.a < 0.05) s.speed = -s.speed;
+      ctx.fillStyle = `rgba(255,255,255,${s.a.toFixed(2)})`;
+      ctx.beginPath();
+      ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    requestAnimationFrame(drawStars);
+  }
+  drawStars();
+})();
+
+// ── App State ─────────────────────────────────────────────────────────────────
+const state = {
+  page:       1,
+  terrain:    'all',
+  totalPages: 1,
+  loading:    false,
+};
+
+// ── Terrain metadata ──────────────────────────────────────────────────────────
+const TERRAIN_META = {
+  Sand:     { cls: 'sand' },
+  Bedrock:  { cls: 'bedrock' },
+  Gravel:   { cls: 'gravel' },
+  Rock:     { cls: 'rock' },
+  Soil:     { cls: 'soil' },
+  Unknown:  { cls: 'unknown' },
+};
+
+function tc(terrain) {
+  return (TERRAIN_META[terrain] || TERRAIN_META.Unknown).cls;
+}
+
+// ── Spinner helpers ───────────────────────────────────────────────────────────
+function showSpinner(text = 'Classifying Mars terrain…', sub = '') {
+  document.getElementById('spinner-text').textContent = text;
+  document.getElementById('spinner-sub').textContent  = sub;
+  document.getElementById('spinner').classList.remove('hidden');
+}
+
+function hideSpinner() {
+  document.getElementById('spinner').classList.add('hidden');
+}
+
+// ── Error helpers ─────────────────────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent  = msg;
+  el.style.display = 'block';
+}
+
+function clearError() {
+  document.getElementById('error-banner').style.display = 'none';
+}
+
+// ── Card builder ──────────────────────────────────────────────────────────────
+function buildCard(img, index) {
+  const cls   = tc(img.terrain);
+  const delay = (index % PAGE_SIZE) * 45;  // stagger animation
+  const conf  = img.confidence || 0;
+  const confLabel = conf > 0 ? `${conf}%` : 'N/A';
+
+  return `
+    <div class="image-card" style="animation-delay:${delay}ms">
+      <div class="card-img-wrap">
+        <img
+          src="${img.img_src}"
+          alt="Mars surface — ${img.terrain}"
+          loading="lazy"
+          onerror="this.style.opacity='0'"
+        >
+        <span class="terrain-badge badge-${cls}">${img.terrain}</span>
+      </div>
+      <div class="card-info">
+        <div class="card-top-row">
+          <span class="sol-number">Sol ${img.sol}</span>
+          <div class="conf-wrap">
+            <div class="conf-bar">
+              <div class="conf-fill fill-${cls}" style="width:${conf}%"></div>
+            </div>
+            <span class="conf-pct">${confLabel}</span>
+          </div>
+        </div>
+        <div class="card-camera" title="${img.camera}">${img.camera}</div>
+        <div class="card-date">${img.earth_date}</div>
+      </div>
+    </div>`;
+}
+
+const PAGE_SIZE = 12;  // must match backend
+
+// ── Render images ─────────────────────────────────────────────────────────────
+function renderImages(images, append = false) {
+  const grid = document.getElementById('image-grid');
+
+  if (!append) grid.innerHTML = '';
+
+  if (!images.length && !append) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <h3>No Images Found</h3>
+        <p>Try a different terrain filter, or check back once more images are classified.</p>
+      </div>`;
+    return;
+  }
+
+  const offset = append ? grid.querySelectorAll('.image-card').length : 0;
+  grid.insertAdjacentHTML('beforeend', images.map((img, i) => buildCard(img, offset + i)).join(''));
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+async function fetchStats() {
+  try {
+    const res  = await fetch('/api/stats');
+    const data = await res.json();
+    const row  = document.getElementById('stats-row');
+
+    const total = data.total || 0;
+    const by    = data.by_terrain || {};
+
+    let html = `<span class="stats-label">${total} classified</span>`;
+
+    for (const [terrain, count] of Object.entries(by)) {
+      if (!count) continue;
+      const cls = tc(terrain);
+      html += `
+        <div class="stat-chip">
+          <span class="stat-dot dot-${cls}"></span>
+          ${terrain}: ${count}
+        </div>`;
+    }
+
+    row.innerHTML = html;
+  } catch (e) {
+    console.warn('Stats fetch failed:', e);
+  }
+}
+
+// ── Latest sol display ────────────────────────────────────────────────────────
+async function fetchLatestSol() {
+  try {
+    const res  = await fetch('/api/latest-sol');
+    const data = await res.json();
+    if (data.sol) {
+      document.getElementById('sol-display').textContent = `Latest image: Sol ${data.sol}`;
+    }
+  } catch (e) {
+    document.getElementById('sol-display').textContent = 'Sol —';
+  }
+}
+
+// ── Main image fetch ──────────────────────────────────────────────────────────
+async function fetchImages(append = false) {
+  if (state.loading) return;
+  state.loading = true;
+
+  const loadMoreBtn  = document.getElementById('load-more-btn');
+  const controls     = document.getElementById('controls');
+  const pendingEl    = document.getElementById('pending-notice');
+
+  if (!append) {
+    showSpinner('Fetching rover images…', '');
+    clearError();
+  }
+  loadMoreBtn.disabled = true;
+
+  try {
+    const url = `/api/images?page=${state.page}&terrain=${state.terrain}`;
+    const res  = await fetch(url);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    renderImages(data.images || [], append);
+
+    state.totalPages = data.pages || 1;
+
+    // Update sol badge
+    if (data.sol) {
+      document.getElementById('sol-display').textContent = `Latest image: Sol ${data.sol}`;
+    }
+
+    // Load More button visibility
+    if (state.page < state.totalPages) {
+      controls.style.display = 'block';
+      loadMoreBtn.disabled   = false;
+      const pending = data.pending || 0;
+      pendingEl.textContent  = pending > 0
+        ? `${pending} more images still pending classification — load more to process them`
+        : '';
+    } else {
+      // Check if there are still unclassified images even on last page
+      if ((data.pending || 0) > 0) {
+        controls.style.display = 'block';
+        loadMoreBtn.disabled   = false;
+        pendingEl.textContent  = `${data.pending} images pending — click to classify more`;
+      } else {
+        controls.style.display = 'none';
+      }
+    }
+
+    fetchStats();
+
+    // If the AI model is still warming up, show a banner and poll until ready
+    const modelBanner = document.getElementById('model-banner');
+    if (data.model_ready === false) {
+      modelBanner.style.display = 'block';
+      // Re-fetch in 15 s to pick up newly-classified images
+      if (!window._modelPollTimer) {
+        window._modelPollTimer = setInterval(async () => {
+          const probe = await fetch('/api/images?page=1&terrain=all').then(r => r.json()).catch(() => ({}));
+          if (probe.model_ready) {
+            clearInterval(window._modelPollTimer);
+            window._modelPollTimer = null;
+            modelBanner.style.display = 'none';
+            state.page = 1;
+            fetchImages(false);  // Full refresh now that model is ready
+          }
+        }, 15000);
+      }
+    } else {
+      modelBanner.style.display = 'none';
+      if (window._modelPollTimer) {
+        clearInterval(window._modelPollTimer);
+        window._modelPollTimer = null;
+      }
+    }
+
+  } catch (err) {
+    console.error('Image fetch failed:', err);
+    showError(
+      `Could not load images: ${err.message}. ` +
+      'Check that the server is running and your NASA_API_KEY is set in .env'
+    );
+  } finally {
+    hideSpinner();
+    state.loading = false;
+  }
+}
+
+// ── Event: filter pills ───────────────────────────────────────────────────────
+document.getElementById('filter-pills').addEventListener('click', function (e) {
+  const pill = e.target.closest('.filter-pill');
+  if (!pill) return;
+
+  this.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+
+  state.terrain = pill.dataset.t;
+  state.page    = 1;
+  fetchImages(false);
+});
+
+// ── Event: load more ──────────────────────────────────────────────────────────
+document.getElementById('load-more-btn').addEventListener('click', function () {
+  state.page++;
+  fetchImages(true);
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+fetchLatestSol();
+fetchImages(false);
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelector('.tab-bar').addEventListener('click', function (e) {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  const view = btn.dataset.view;
+
+  this.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  document.getElementById('view-grid').style.display = view === 'grid' ? '' : 'none';
+  document.getElementById('view-map').style.display  = view === 'map'  ? '' : 'none';
+
+  if (view === 'map') {
+    if (!_map) initMap();
+    if (!_mapDataLoaded) fetchMapData();
+    else _map.invalidateSize();
+  }
+});
+
+// ── Map globals ───────────────────────────────────────────────────────────────
+let _map           = null;
+let _markerGroups  = {};   // terrain → [L.CircleMarker]
+let _mapDataLoaded = false;
+let _aheadMarkers  = [];   // L.CircleMarker terrain-ahead points
+
+const TERRAIN_HEX = {
+  Sand:    '#c8903a',
+  Bedrock: '#3d85b5',
+  Gravel:  '#7a7a90',
+  Rock:    '#b84a38',
+  Soil:    '#7a5e3a',
+  Unknown: '#4a4a70',
+};
+
+// ── Map init ──────────────────────────────────────────────────────────────────
+function initMap() {
+  // Jezero Crater — Perseverance landing site
+  // L.CRS.EPSG4326 matches the Mars Trek WMTS equirectangular tile matrix
+  // (MatrixWidth=2^(z+1), MatrixHeight=2^z). Without this the tile
+  // coordinates Leaflet requests are wrong and tiles fail to load.
+  _map = L.map('map', {
+    center: [18.4316, 77.3357],   // midpoint of known traverse
+    zoom: 10,
+    minZoom: 2,
+    maxZoom: 16,                  // can zoom in freely; tile layer upscales above 7
+    scrollWheelZoom: true,
+    zoomControl: true,
+    crs: L.CRS.EPSG4326,
+  });
+
+  L.tileLayer(
+    'https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m/1.0.0/default/default028mm/{z}/{y}/{x}.jpg',
+    {
+      attribution: '&copy; NASA Mars Trek / Viking MDIM',
+      tms: false,
+      noWrap: true,
+      minZoom: 0,
+      maxZoom: 16,
+      maxNativeZoom: 7,           // tiles exist up to zoom 7; scaled above that
+      errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+    }
+  ).addTo(_map);
+}
+
+// ── Fetch and render map data ─────────────────────────────────────────────────
+async function fetchMapData() {
+  document.getElementById('map-loading').classList.remove('hidden');
+
+  try {
+    const res  = await fetch('/api/map-data');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // Draw traverse path
+    if (data.traverse && data.traverse.length > 1) {
+      const coords = data.traverse.map(w => [w.lat, w.lon]);
+      L.polyline(coords, {
+        color:   'rgba(255,130,50,0.55)',
+        weight:  2.5,
+        dashArray: '5,8',
+        lineCap: 'round',
+      }).addTo(_map);
+
+      // Start / end markers
+      const startWp = data.traverse[0];
+      const endWp   = data.traverse[data.traverse.length - 1];
+      L.circleMarker([startWp.lat, startWp.lon], {
+        radius: 6, fillColor: '#ff9040', color: '#fff', weight: 1.5, fillOpacity: 1,
+      }).bindTooltip('Landing site — Sol 0 (Feb 2021)', { direction: 'right' }).addTo(_map);
+      const roverMarker = L.circleMarker([endWp.lat, endWp.lon], {
+        radius: 8, fillColor: '#ffffff', color: '#ff9040', weight: 3, fillOpacity: 1,
+      }).bindTooltip(`Perseverance — Sol ${endWp.sol}`, { direction: 'right' }).addTo(_map);
+      // Pulse effect: animate radius via setInterval
+      let _pulseGrowing = true;
+      setInterval(() => {
+        const r = roverMarker.options.radius;
+        if (_pulseGrowing) { roverMarker.setStyle({ radius: r + 0.5 }); if (r >= 11) _pulseGrowing = false; }
+        else               { roverMarker.setStyle({ radius: r - 0.5 }); if (r <= 7)  _pulseGrowing = true;  }
+      }, 80);
+    }
+
+    // Update coverage counter in legend
+    const coverageEl = document.getElementById('map-coverage');
+    if (coverageEl) {
+      const cl = data.classified_count || 0;
+      const tot = data.waypoint_count || 0;
+      coverageEl.textContent = `${cl} of ${tot} waypoints classified`;
+    }
+
+    // Group markers by terrain — use shared canvas renderer for performance
+    _markerGroups = {};
+    for (const item of (data.photos || [])) {
+      const hex     = TERRAIN_HEX[item.terrain_type] || TERRAIN_HEX.Unknown;
+      const cls     = tc(item.terrain_type);
+      const isKnown = item.terrain_type !== 'Unknown';
+
+      const marker = L.circleMarker([item.lat, item.lon], {
+        radius:      isKnown ? 5 : 3,
+        fillColor:   hex,
+        color:       isKnown ? 'rgba(255,255,255,0.35)' : 'transparent',
+        weight:      isKnown ? 1 : 0,
+        fillOpacity: isKnown ? 0.88 : 0.40,
+        opacity:     1,
+      });
+
+      const imgHtml = item.image_url
+        ? `<img class="mp-img" src="${item.image_url}" alt="Mars surface" loading="lazy" onerror="this.style.display='none'">`
+        : '';
+      const conf     = item.confidence > 0 ? `${item.confidence}%` : '';
+      const dateRow  = item.earth_date ? ` &nbsp;·&nbsp; ${item.earth_date}` : '';
+      const confRow  = conf ? `<div class="mp-row">Confidence: <strong>${conf}</strong></div>` : '';
+      const camRow   = item.camera ? `<div class="mp-row">${item.camera}</div>` : '';
+      marker.bindPopup(`
+        <div class="mp">
+          ${imgHtml}
+          <div><span class="mp-badge badge-${cls}">${item.terrain_type}</span></div>
+          <div class="mp-row"><strong>Sol ${item.sol}</strong>${dateRow}</div>
+          ${confRow}${camRow}
+        </div>
+      `, { maxWidth: 260 });
+
+      if (isKnown) {
+        marker.on('mouseover', function () { this.setStyle({ radius: 8, weight: 2 }); });
+        marker.on('mouseout',  function () { this.setStyle({ radius: 5, weight: 1 }); });
+      }
+
+      if (!_markerGroups[item.terrain_type]) _markerGroups[item.terrain_type] = [];
+      _markerGroups[item.terrain_type].push(marker);
+      marker.addTo(_map);
+    }
+
+    _mapDataLoaded = true;
+    _map.invalidateSize();
+
+    // Fit map to traverse if available
+    if (data.traverse && data.traverse.length > 1) {
+      const lats = data.traverse.map(w => w.lat);
+      const lons = data.traverse.map(w => w.lon);
+      _map.fitBounds([
+        [Math.min(...lats), Math.min(...lons)],
+        [Math.max(...lats), Math.max(...lons)],
+      ], { padding: [40, 40] });
+    }
+
+  } catch (err) {
+    console.error('Map data fetch failed:', err);
+    const errDiv = document.createElement('div');
+    errDiv.className = 'map-empty';
+    errDiv.innerHTML = `<h3>Map data unavailable</h3><p>${err.message}</p>`;
+    document.getElementById('view-map').appendChild(errDiv);
+  } finally {
+    document.getElementById('map-loading').classList.add('hidden');
+  }
+}
+
+// ── Satellite terrain analysis ────────────────────────────────────────────────
+document.getElementById('btn-analyse').addEventListener('click', async function () {
+  const btn    = this;
+  const status = document.getElementById('analyse-status');
+
+  if (!_map) { status.textContent = 'Open the map first.'; return; }
+
+  btn.disabled    = true;
+  btn.textContent = 'Classifying…';
+  status.textContent = 'Analysing 25 points ahead — first run ~1 min, then cached.';
+
+  try {
+    const res  = await fetch('/api/classify-area');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // Clear previous ahead-markers
+    for (const m of _aheadMarkers) m.remove();
+    _aheadMarkers = [];
+
+    for (const pt of (data.points || [])) {
+      const hex = TERRAIN_HEX[pt.terrain] || TERRAIN_HEX.Unknown;
+      const marker = L.circleMarker([pt.lat, pt.lon], {
+        radius:      10,
+        fillColor:   hex,
+        color:       '#fff',
+        weight:      1.5,
+        fillOpacity: 0.88,
+      });
+      const dir = pt.km_side === 0 ? 'centre'
+                : pt.km_side  > 0  ? `${pt.km_side} km right`
+                : `${Math.abs(pt.km_side)} km left`;
+      marker.bindPopup(`
+        <div class="mp">
+          <div><span class="mp-badge badge-${tc(pt.terrain)}">${pt.terrain}</span></div>
+          <div class="mp-row"><strong>${pt.km_ahead} km ahead</strong> · ${dir}</div>
+          <div class="mp-row">Confidence: <strong>${pt.confidence}%</strong></div>
+        </div>`, { maxWidth: 200 });
+      marker.bindTooltip(`${pt.terrain} · ${pt.confidence}%`, { sticky: true, className: 'terrain-tip' });
+      marker.addTo(_map);
+      _aheadMarkers.push(marker);
+    }
+
+    // Fit map to show rover + ahead grid
+    if (data.points && data.points.length > 0) {
+      const allLats = [data.rover_lat, ...data.points.map(p => p.lat)];
+      const allLons = [data.rover_lon, ...data.points.map(p => p.lon)];
+      _map.fitBounds(
+        [[Math.min(...allLats), Math.min(...allLons)], [Math.max(...allLats), Math.max(...allLons)]],
+        { padding: [50, 50] }
+      );
+    }
+
+    const sol = data.rover_sol ? ` (Sol ${data.rover_sol})` : '';
+    status.textContent = `25 points classified 1–5 km ahead${sol}. Click any dot for details.`;
+    btn.textContent    = 'Re-analyse';
+    btn.disabled       = false;
+
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+    btn.textContent    = 'Analyse Terrain Ahead';
+    btn.disabled       = false;
+  }
+});
+
+// ── Full-region terrain classification ────────────────────────────────────────
+document.getElementById('btn-analyse-full').addEventListener('click', async function () {
+  const btn    = this;
+  const status = document.getElementById('analyse-status');
+
+  if (!_map) { status.textContent = 'Open the map first.'; return; }
+
+  btn.disabled    = true;
+  btn.textContent = 'Classifying…';
+  status.textContent = 'Classifying full region — first run ~2 min, then cached.';
+
+  try {
+    const res  = await fetch('/api/classify-area?mode=region');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // Clear previous ahead-markers too (full replaces partial)
+    for (const m of _aheadMarkers) m.remove();
+    _aheadMarkers = [];
+
+    for (const pt of (data.points || [])) {
+      const hex = TERRAIN_HEX[pt.terrain] || TERRAIN_HEX.Unknown;
+      const marker = L.circleMarker([pt.lat, pt.lon], {
+        radius:      8,
+        fillColor:   hex,
+        color:       '#fff',
+        weight:      1,
+        fillOpacity: 0.80,
+      });
+      marker.bindTooltip(`${pt.terrain} · ${pt.confidence}%`, { sticky: true, className: 'terrain-tip' });
+      marker.bindPopup(`
+        <div class="mp">
+          <div><span class="mp-badge badge-${tc(pt.terrain)}">${pt.terrain}</span></div>
+          <div class="mp-row">Confidence: <strong>${pt.confidence}%</strong></div>
+          <div class="mp-row" style="font-size:0.72rem;color:var(--text-dim)">${pt.lat.toFixed(4)}°N, ${pt.lon.toFixed(4)}°E</div>
+        </div>`, { maxWidth: 200 });
+      marker.addTo(_map);
+      _aheadMarkers.push(marker);
+    }
+
+    if (data.points && data.points.length > 0) {
+      const lats = data.points.map(p => p.lat);
+      const lons = data.points.map(p => p.lon);
+      _map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [40, 40] });
+    }
+
+    status.textContent = `${data.points.length} points classified across full region. Click any dot for details.`;
+    btn.textContent    = 'Re-classify Region';
+    btn.disabled       = false;
+
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+    btn.textContent    = 'Classify Full Region';
+    btn.disabled       = false;
+  }
+});
+
+// ── Map terrain filter ────────────────────────────────────────────────────────
+document.getElementById('map-filter-panel').addEventListener('change', function (e) {
+  if (e.target.type !== 'checkbox') return;
+  const terrain = e.target.closest('.filter-toggle').dataset.terrain;
+  const visible = e.target.checked;
+  const label   = e.target.closest('.filter-toggle');
+  label.classList.toggle('dimmed', !visible);
+
+  if (!_map || !_markerGroups[terrain]) return;
+  for (const marker of _markerGroups[terrain]) {
+    if (visible) marker.addTo(_map);
+    else marker.remove();
+  }
+});
+</script>
+</body>
+</html>
