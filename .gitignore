@@ -173,6 +173,10 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Mars Explorer — project-specific
+cache/          # auto-generated classification cache, re-downloadable
+.claude/        # Claude Code local memory, personal/machine-specific
+
 # Cursor  
 #  Cursor is an AI-powered code editor.`.cursorignore` specifies files/directories to 
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
